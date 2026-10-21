@@ -56,8 +56,8 @@ export default function ProjectsMapPage(): JSX.Element {
         areaHectares: PROTECTION_BUFFER_AREA_HA,
         radiusKm: PROTECTION_BUFFER_RADIUS_KM,
         polygon: buildBufferPolygon(
-          project.latitude,
-          project.longitude,
+          project.coordinates.latitude,
+          project.coordinates.longitude,
           PROTECTION_BUFFER_RADIUS_KM,
         ),
         // Placeholder: replace with real deforestation event intersection check.

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, type JSX } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Circle, Tooltip, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Circle, Polygon, Tooltip, Popup, useMap } from 'react-leaflet';
 import Link from 'next/link';
 import { Badge } from '@/components/atoms/Badge';
 import { Button } from '@/components/atoms/Button';
@@ -29,6 +29,24 @@ export interface OffsetProjectMapFilters {
   availableOnly: boolean;
 }
 
+/**
+ * A forest protection buffer zone entry for the global map overlay.
+ * Passed from the map page (issue #1714) so the OffsetProjectMap can render
+ * buffer polygons alongside the project markers.
+ */
+export interface MapProtectionZone {
+  projectId: string;
+  projectName: string;
+  /** Approximate area of the buffer zone in hectares. */
+  areaHectares: number;
+  /** Radius in km used to generate the buffer circle. */
+  radiusKm: number;
+  /** Polygon ring of [lng, lat] coordinate pairs (GeoJSON order). */
+  polygon: [number, number][];
+  /** True when a deforestation event intersects the buffer zone. */
+  hasDeforestationAlert: boolean;
+}
+
 export interface OffsetProjectMapProps {
   projects: CarbonProject[];
   initialRegion?: MapRegionFilter;
@@ -38,9 +56,12 @@ export interface OffsetProjectMapProps {
   height?: string;
   className?: string;
   showFilters?: boolean;
-  filters?: OffsetProjectMapFilters;
-  className?: string;
   enableClimateLayerByDefault?: boolean;
+  /**
+   * Optional list of forest protection buffer zones to render as Polygon
+   * overlays on the map (issue #1714).
+   */
+  protectionZones?: MapProtectionZone[];
 }
 
 // Region bounding box and view center definitions
@@ -208,9 +229,8 @@ export function OffsetProjectMap({
   height = '620px',
   className = '',
   showFilters = true,
-  filters: externalFilters,
-  className = '',
   enableClimateLayerByDefault = false,
+  protectionZones = [],
 }: OffsetProjectMapProps): JSX.Element {
   const [selectedRegion, setSelectedRegion] = useState<MapRegionFilter>(initialRegion);
   const [selectedType, setSelectedType] = useState<string>(initialType);
@@ -534,6 +554,36 @@ export function OffsetProjectMap({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
+          {/* ── Forest Protection Buffer Zones (issue #1714) ──────────────
+              Render each project's circular buffer polygon as a semi-transparent
+              green (or red when deforestation is detected) overlay. Positions are
+              converted from GeoJSON [lng, lat] to Leaflet [lat, lng] tuples.
+          */}
+          {protectionZones.map((zone) => {
+            const positions = zone.polygon.map(
+              ([lng, lat]) => [lat, lng] as [number, number]
+            );
+            const zoneStyle: { color: string; fillColor: string; fillOpacity: number; weight: number; dashArray: string } = zone.hasDeforestationAlert
+              ? { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.10, weight: 1.5, dashArray: '8 5' }
+              : { color: '#00b36b', fillColor: '#00b36b', fillOpacity: 0.08, weight: 1.2, dashArray: '5 4' };
+            return (
+              <Polygon key={`zone-${zone.projectId}`} positions={positions} pathOptions={zoneStyle}>
+                <Tooltip sticky>
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-semibold">{zone.projectName}</p>
+                    <p>Protection zone: {zone.areaHectares.toLocaleString()} ha</p>
+                    <p>Buffer radius: {zone.radiusKm} km</p>
+                    {zone.hasDeforestationAlert ? (
+                      <p className="text-red-600 font-medium">⚠ Deforestation detected</p>
+                    ) : (
+                      <p className="text-emerald-600">✓ No deforestation alerts</p>
+                    )}
+                  </div>
+                </Tooltip>
+              </Polygon>
+            );
+          })}
+
           {filteredProjects.map((project) => {
             const colors = getProjectTypeColor(project.type);
             const isOutOfStock = project.isOutOfStock || project.availableSupply <= 0;
@@ -848,6 +898,12 @@ export function OffsetProjectMap({
                   <span className="w-3 h-3 rounded-full bg-[#94a3b8]" />
                   <span className="text-muted-foreground">Sold Out / Reserved</span>
                 </div>
+                {protectionZones.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-border/40 mt-1">
+                    <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-stellar-green bg-stellar-green/10" aria-hidden />
+                    <span className="text-muted-foreground">Protection zone</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
